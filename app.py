@@ -1,7 +1,34 @@
 """Dog Day Trip Planner - CS361 Milestone 1."""
 
 import json
+import zmq
 from pathlib import Path
+
+
+def get_temperature(location, unit="F"):
+    """Request the current temperature from the weather microservice.
+    Returns a display string like '72.3 F', or None if the service is unavailable.
+    """
+    try:
+        context = zmq.Context()
+        socket = context.socket(zmq.REQ)
+        socket.setsockopt(zmq.RCVTIMEO, 3000)  # 3 second timeout
+        socket.setsockopt(zmq.SNDTIMEO, 3000)  # 3 second timeout
+        socket.setsockopt(zmq.LINGER, 0)        # don't hang on close
+        socket.connect("tcp://127.0.0.1:5556")
+        socket.send_string(json.dumps({
+            "action": "get_temperature",
+            "location": location,
+            "unit": unit
+        }))
+        response = json.loads(socket.recv())
+        socket.close()
+        context.term()
+        if response.get("success"):
+            return f"{response['temperature']} {response['unit']}"
+    except Exception:
+        pass
+    return None
 
 
 DATA_FILE = Path(__file__).parent / "data" / "destinations.json"
@@ -210,7 +237,9 @@ def show_rankings(destinations):
         print("No destinations have complete ratings yet.")
     else:
         for number, destination in enumerate(ranked, start=1):
-            print(f"{number}  {destination['name']} - {total_score(destination)}/20")
+            weather = get_temperature(destination["name"])
+            weather_str = f"  {weather}" if weather else ""
+            print(f"{number}  {destination['name']} - {total_score(destination)}/20{weather_str}")
 
     print("\nTied totals are ordered alphabetically.")
     choice = input("[R] Rate a destination  [M] Main Menu  [H] Help: ").strip().lower()
